@@ -1,124 +1,216 @@
 #!/usr/bin/env python3
 
 import argparse
-import subprocess
 from collections import defaultdict
 import pysam
+import time
 
+# Parse inputs
 
 parser = argparse.ArgumentParser(
-    description="4D heterozygosity (π proxy) for single diploid sample"
+    description="CDS extraction + flexible 0/2/3/4-fold VCF output"
 )
 
 parser.add_argument("-r", "--reference", required=True)
 parser.add_argument("-g", "--gff", required=True)
 parser.add_argument("-v", "--vcf", required=True)
+parser.add_argument("-o", "--out_prefix", required=True)
+parser.add_argument("-f", "--fold", required=True,
+                    help="Comma-separated folds to output, e.g. 0,2,4")
 
 args = parser.parse_args()
 
 genome_fa = args.reference
 gff_file = args.gff
 vcf_file = args.vcf
+prefix = args.out_prefix
+
+requested_folds = set(args.fold.split(","))
 
 
-fourfold = {"GC", "GG", "CC", "AC", "GT", "CG", "CT", "TC"}
+# Set output files
+
+cds_file = f"{prefix}_cds.fa"
+cds_out = open(cds_file, "w")
+
+vcf = pysam.VariantFile(vcf_file)
+
+fasta = pysam.FastaFile(genome_fa)
+
+RC = str.maketrans("ACGT", "TGCA")
 
 
-def fetch_seq(chrom, start, end):
-    cmd = f"samtools faidx {genome_fa} {chrom}:{start+1}-{end}"
-    out = subprocess.check_output(cmd, shell=True).decode().splitlines()
-    return "".join(out[1:]).upper()
+# Degeneracy table taken from Mackintosh 2019
+
+degen_dict = {
+    'ttt': '002', 'ttc': '002', 'tta': '202', 'ttg': '202',
+    'tct': '004', 'tcc': '004', 'tca': '004', 'tcg': '004',
+    'tat': '002', 'tac': '002', 'taa': '022', 'tag': '002',
+    'tgt': '002', 'tgc': '002', 'tga': '020', 'tgg': '000',
+    'ctt': '004', 'ctc': '004', 'cta': '204', 'ctg': '204',
+    'cct': '004', 'ccc': '004', 'cca': '004', 'ccg': '004',
+    'cat': '002', 'cac': '002', 'caa': '002', 'cag': '002',
+    'cgt': '004', 'cgc': '004', 'cga': '204', 'cgg': '204',
+    'att': '003', 'atc': '003', 'ata': '003', 'atg': '000',
+    'act': '004', 'acc': '004', 'aca': '004', 'acg': '004',
+    'aat': '002', 'aac': '002', 'aaa': '002', 'aag': '002',
+    'agt': '002', 'agc': '002', 'aga': '202', 'agg': '202',
+    'gtt': '004', 'gtc': '004', 'gta': '004', 'gtg': '004',
+    'gct': '004', 'gcc': '004', 'gca': '004', 'gcg': '004',
+    'gat': '002', 'gac': '002', 'gaa': '002', 'gag': '002',
+    'ggt': '004', 'ggc': '004', 'gga': '004', 'ggg': '004'
+}
 
 
 genes = defaultdict(list)
+
+
+start_time = time.time()
+
+
+# Convert the gff file to a bed with just CDS locations 
 
 with open(gff_file) as f:
     for line in f:
         if line.startswith("#"):
             continue
 
-        chrom, _, feat, start, end, _, strand, phase, attrs = line.strip().split("\t")
-
-        if feat != "CDS":
+        parts = line.strip().split()
+        if len(parts) < 9: # Skips malformed lines during testing, probably unnecessary now
             continue
 
-        raw_parent = next(
-            (x.split("=")[1] for x in attrs.split(";") if x.startswith("Parent=")),
+        chrom, _, feat, start, end, _, strand, phase, attrs = parts[:9]
+
+        if feat.upper() != "CDS": # Skips gene, mRNA etc lines
+            continue
+
+        parent = next(
+            (x.split("=", 1)[1] for x in attrs.split(";") if x.startswith("Parent=")), # Extract the gene name from the attrs sections (after parent=)
             None
         )
 
-        # remove chrom prefix (e.g. chrom1-gene123 → gene123)
-        parent = raw_parent.split("-", 1)[-1] if raw_parent else None
+        if not parent:
+            continue
 
         genes[parent].append(
-            (chrom, int(start) - 1, int(end), strand, int(phase))
+            (chrom, int(start) - 1, int(end), strand, int(phase)) # Converts 1-based GFF to 0-based bed
         )
 
 
-fourD_sites = []
+# Create writers for output vcf files
 
-for blocks in genes.values():
+writers = {}
 
-    blocks.sort(key=lambda x: x[1])
+for f in requested_folds:
+    writers[f] = pysam.VariantFile(
+        f"{prefix}.{f}d.vcf", "w", header=vcf.header
+    )
 
-    strand = blocks[0][3]
 
-    if strand == "-":
-        blocks = blocks[::-1]
+# Keep track of all sites and heterozygous sites
+
+sites = {
+    "0": set(),
+    "2": set(),
+    "3": set(),
+    "4": set()
+}
+
+heterozygous_sites = {
+    "0": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0
+}
+
+
+
+# Find CDS, split it into codons, compare the third position to a degen table and add to sites
+
+for parent, blocks in genes.items():
+
+    blocks.sort(key=lambda x: (x[0], x[1]))
 
     seq = []
     coord = []
 
     for chrom, start, end, strand, phase in blocks:
 
-        frag = fetch_seq(chrom, start, end)
+        frag = fasta.fetch(chrom, start, end).upper()
 
         if strand == "-":
-            frag = frag[::-1].translate(str.maketrans("ACGT", "TGCA"))
-
-        frag = frag[phase:]
+            frag = frag[::-1].translate(RC) # Reverse compliment genes on minus strand
 
         for i, base in enumerate(frag):
             seq.append(base)
             coord.append((chrom, start + i))
 
-    seq = seq[:len(seq) - len(seq) % 3]
+
+    gene_seq = "".join(seq)
+
+    if gene_seq:
+        cds_out.write(f">{parent}\n") 
+        for i in range(0, len(gene_seq), 60):     # write CDS fasta with a wrap of 60 bases per line
+            cds_out.write(gene_seq[i:i+60] + "\n")
+
+    seq = seq[:len(seq) - (len(seq) % 3)] # Remove bases left if they are in an incomplete codon
+    coord = coord[:len(coord) - (len(coord) % 3)] # Same for coordinates
 
     for i in range(0, len(seq), 3):
-        codon = "".join(seq[i:i+3])
 
-        if "N" in codon:
+        codon = "".join(seq[i:i+3]).lower()
+
+        if "n" in codon:
             continue
 
-        if codon[:2] in fourfold:
-            fourD_sites.append(coord[i + 2])
+        site = coord[i + 2] # Get the coordinate of the third position of the codon
+
+        deg = degen_dict.get(codon)
+        if deg is None:
+            continue
+
+        third = deg[2] # Use the look-up table to see what the degeneracy of the third position is
+
+        if third in sites:
+            sites[third].add(site)
 
 
-vcf = pysam.VariantFile(vcf_file)
+# Make VCF files
 
-fourD_set = set(fourD_sites)
-
-hets = 0
+written = {f: 0 for f in requested_folds}
 
 for record in vcf.fetch():
 
-    key = (record.chrom, record.pos - 1)
+    key = (record.chrom, record.pos - 1) # Convert 1-based vcf variants to 0-based
 
-    if key not in fourD_set:
-        continue
+    for f in requested_folds: # Add variants to a different vcf depending on fold
+        if key in sites[f]:
+            writers[f].write(record)
+            written[f] += 1
+            
+            for sample in record.samples.values():
+                if sample["GT"] is not None and len(set(sample["GT"])) > 1:  # Heterozygous (GT not equal to a single value)
+                    heterozygous_sites[f] += 1
+                    break
 
-    gt = next(iter(record.samples.values()))["GT"]
 
-    if gt is not None and len(gt) == 2 and gt[0] != gt[1]:
-        hets += 1
+for w in writers.values():
+    w.close()
+cds_out.close()
 
 
-pi = hets / len(fourD_sites) if fourD_sites else 0
+end_time = time.time() 
+elapsed_time = end_time - start_time
 
-print("=== 4D Heterozygosity (π proxy) ===")
-print(f"Reference:     {genome_fa}")
-print(f"GFF:           {gff_file}")
-print(f"VCF:           {vcf_file}")
-print(f"4D sites:      {len(fourD_sites)}")
-print(f"Heterozygotes: {hets}")
-print(f"π (proxy):     {pi:.6e}")
+
+# Summary to be printed to terminal
+
+print("Complete")
+
+for f in sorted(requested_folds):
+    print(f"{f}D sites:", len(sites[f]))
+    print(f"{f}D VCF records:", written[f])
+    heterozygosity = heterozygous_sites[f] / written[f] if written[f] > 0 else 0
+    print(f"{f}D Heterozygosity: {heterozygosity:.4f}")
+
+print(f"Total execution time: {elapsed_time:.2f} seconds")
