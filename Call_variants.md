@@ -17,7 +17,10 @@ longshot --bam '"${species}"'.sorted.bam --ref '"$genome"' \
 --out out_{}.vcf --region {} \
 > logs/{}.log 2>&1'
 
-bcftools concat -a out_*.vcf -Oz -o merged.vcf.gz
+parallel -j 8 bgzip {} ::: out_*.vcf
+parallel -j 8 tabix {} ::: out_*.vcf.gz
+
+bcftools concat -a out_*.vcf.gz -Oz -o merged.vcf.gz
 bcftools index merged.vcf.gz
 
 
