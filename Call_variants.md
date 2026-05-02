@@ -71,10 +71,15 @@ Old code for a variant caller that is no longer being used
 
 ```bash
 
-#mkdir -p logs
+mkdir -p logs
+
+samtools depth -a -q 20 sample.bam > depth.txt
+MEAN_DP=$(awk '{sum+=$3} END {print sum/NR}' depth.txt)
+MAX_DP=$((MEAN_DP * 2))
 
 cut -f1 "$genome.fai" | parallel -j 8 '
 longshot --bam '"${species}"'.sorted.bam --ref '"$genome"' \
+--min_cov 6 --max_cov '"$MAX_DP"' --min_mapq 20 \
 --out out_{}.vcf --region {} \
 > logs/{}.log 2>&1'
 
@@ -83,4 +88,39 @@ parallel -j 8 tabix {} ::: out_*.vcf.gz
 
 bcftools concat -a out_*.vcf.gz -Oz -o merged.vcf.gz
 bcftools index merged.vcf.gz
+
+bcftools view -v snps merged.vcf.gz -Ou | \
+bcftools filter -i "QUAL>=15 && FORMAT/GQ>=20" \
+-Oz -o filtered.vcf.gz
+
+
+vcftools --gzvcf filtered.vcf.gz --SNPdensity 10000 --out snp_density
+
+awk -v maxdp="$MAX_DP" '{
+  if ($3 >= 6 && $3 <= maxdp)
+    print $1"\t"$2-1"\t"$2
+}' depth.txt > callable.bed
+
+sort -k1,1 -k2,2n callable.bed | bedtools merge > callable.merged.bed
+
+bedtools makewindows -g "$genome.fai" -w 10000 > windows.bed
+
+bedtools coverage -a windows.bed -b callable.merged.bed > callable_per_window.txt
+
+paste snp_density.snpden callable_per_window.txt | \
+awk '{
+  chrom=$1
+  start=$2
+  end=$3
+  snps=$4
+  callable=$NF
+
+  if (callable > 0) {
+    norm = snps * (10000 / callable)
+  } else {
+    norm = "NA"
+  }
+
+  print chrom, start, end, snps, callable, norm
+}' > normalized_snp_density.txt
 ```
