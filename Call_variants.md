@@ -14,7 +14,7 @@ pbmm2 align "${genome%.*}.mmi" "$reads" "${species}.sorted.bam" --rg "@RG\tID:${
 bcftools mpileup -f $genome -a "FORMAT/QS,FORMAT/AD,FORMAT/DP,INFO/AD" -B --min-MQ 30 --min-BQ 20 ${species}.sorted.bam | \
 bcftools call -m --threads $threads --ploidy 2 -a GQ,GP -Oz -o ${base}.bcftools.vcf.gz
 
-bcftools view -v snps -m2 -M2 "${species}.bcftools.vcf" -Oz -o "${species}.bcftools.snps.vcf.gz" && \
+bcftools view -v snps -m2 -M2 "${species}.bcftools.vcf.gz" -Oz -o "${species}.bcftools.snps.vcf.gz" && \
 tabix "${species}.biallelic.snps.vcf.gz"
 
 ```
