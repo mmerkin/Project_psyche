@@ -55,7 +55,7 @@ samtools bam2fq Aricia_artaxerxes_autosomes.bam > Aricia_artaxerxes_autosomes.fa
 FastK -v -t1 -k31 ../Aricia_artaxerxes_HiFi.fastq.gz -NTable
 Histex -G Table | ~/apps/GENESCOPE.FK/GeneScopeFK.R -o Output -k 31
 
-
+```
 
 
 
