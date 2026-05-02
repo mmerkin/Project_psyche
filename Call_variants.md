@@ -17,6 +17,7 @@ run_sample() {
   pbmm2 index "$genome" "${genome%.*}.mmi"
   pbmm2 align "${genome%.*}.mmi" "$reads" "$output/${species}.sorted.bam" --rg "@RG\tID:${species}_pb_1\tSM:${species}\tPL:PACBIO\tLB:${species}\tPU:${species}_run1" --sort -j "$j" -J "$J"
   samtools depth -a -Q 20 -q 30 "$output/${species}.sorted.bam" > "$output/${species}.depth.txt"
+}
 
 export -f run_sample
 
@@ -43,12 +44,7 @@ parallel -j 4 run_sample {} 12 ::: HiFi_reads/*.fastq.gz
   "${species}.bcftools.snps.vcf.gz" -Oz -o "${species}.bcftools.snps.filtered.vcf.gz"
 
   tabix "${species}.bcftools.snps.filtered.vcf.gz"
-}
 
-export -f run_sample
-
-
-parallel -j 4 run_sample {} 12 ::: HiFi_reads/*.fastq.gz
 
 ```
 
