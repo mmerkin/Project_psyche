@@ -5,7 +5,8 @@ Code for calling variants
 ```bash
 run_sample() {
   reads="$1"
-  threads="$2"
+  output="$2"
+  threads="$3"
   
   
   j=$((threads / 2))
@@ -14,10 +15,17 @@ run_sample() {
   species=$(basename "$reads" | cut -d'_' -f1,2)
   genome=$(ls Genomes/${species}.GCA_*/*.fa)
   pbmm2 index "$genome" "${genome%.*}.mmi"
-  pbmm2 align "${genome%.*}.mmi" "$reads" "${species}.sorted.bam" --rg "@RG\tID:${species}_pb_1\tSM:${species}\tPL:PACBIO\tLB:${species}\tPU:${species}_run1" --sort -j "$j" -J "$J"
-  samtools depth -a -Q 20 -q 30 "${species}.sorted.bam" > "${species}.depth.txt"
-  mean_cov=$(awk '{sum+=$3} END {print sum/NR}' "${species}.depth.txt")
-  max_cov=$(awk -v m="$mean_cov" 'BEGIN {print 2*m}')
+  pbmm2 align "${genome%.*}.mmi" "$reads" "$output/${species}.sorted.bam" --rg "@RG\tID:${species}_pb_1\tSM:${species}\tPL:PACBIO\tLB:${species}\tPU:${species}_run1" --sort -j "$j" -J "$J"
+  samtools depth -a -Q 20 -q 30 "$output/${species}.sorted.bam" > "$output/${species}.depth.txt"
+
+export -f run_sample
+
+
+parallel -j 4 run_sample {} 12 ::: HiFi_reads/*.fastq.gz
+
+```
+
+```bash
 
   bcftools mpileup -f "$genome" \
     -a FORMAT/QS,FORMAT/AD,FORMAT/DP,INFO/AD \
