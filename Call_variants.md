@@ -19,6 +19,23 @@ tabix "${species}.biallelic.snps.vcf.gz"
 
 ```
 
+
+## Genomescope
+
+```bash
+samtools view -bS -L Aricia_artaxerxes_autosomes.bed Aricia_artaxerxes.sorted.bam > Aricia_artaxerxes_autosomes.bam
+samtools bam2fq Aricia_artaxerxes_autosomes.bam > Aricia_artaxerxes_autosomes.fastq; bgzip Aricia_artaxerxes_autosomes.fastq
+
+
+FastK -v -t1 -k31 ../Aricia_artaxerxes_HiFi.fastq.gz -NTable
+Histex -G Table | ~/apps/GENESCOPE.FK/GeneScopeFK.R -o Output -k 31
+
+
+
+
+
+
+
 ## Longshot
 
 Old code for a variant caller that is no longer being used 
