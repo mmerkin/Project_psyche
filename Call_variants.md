@@ -61,7 +61,11 @@ Histex -G Table | ~/apps/GENESCOPE.FK/GeneScopeFK.R -o Output -k 31
 
 ```
 
+## Python
 
+```bash
+cat Heterozygosity/Agriades_optilete_Z.heterozygosity.txt | awk '{het += $6; cov += $4} END {print het/cov}'
+```
 
 
 
