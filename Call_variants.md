@@ -71,28 +71,82 @@ cat Heterozygosity/Agriades_optilete_autosomes.heterozygosity.txt | awk '$4 >= 6
 
 ## Longshot
 
-Old code for a variant caller that is no longer being used 
+
 
 ```bash
 
-mkdir -p logs
+threads=40
+for bam in bams/*.bam; do
+species=$(basename "$bam" | cut -d'.' -f1)
+genome=$(ls Genomes/${species}.GCA_*/*.fa)
 
-samtools depth -a -q 20 sample.bam > depth.txt
-MEAN_DP=$(awk '{sum+=$3} END {print sum/NR}' depth.txt)
-MAX_DP=$((MEAN_DP * 2))
+mkdir -p "Variants/$species/logs"
 
-cut -f1 "$genome.fai" | parallel -j 8 '
-longshot --bam '"${species}"'.sorted.bam --ref '"$genome"' \
---min_cov 6 --max_cov '"$MAX_DP"' --min_mapq 20 \
---out out_{}.vcf --region {} \
-> logs/{}.log 2>&1'
+cut -f1 "$genome.fai" | parallel -j "$threads" \
+longshot --bam "$bam" --ref "$genome" \
+--out Variants/"$species"/"${species}_chr_{}".vcf --region {} \
+">" Variants/"$species"/logs/"${species}_chr_{}".log "2>&1"
 
-parallel -j 8 bgzip {} ::: out_*.vcf
-parallel -j 8 tabix {} ::: out_*.vcf.gz
+parallel -j "$threads" bgzip ::: Variants/"$species"/${species}_chr_*.vcf
+parallel -j "$threads" tabix ::: Variants/"$species"/${species}_chr_*.vcf.gz
 
-bcftools concat -a out_*.vcf.gz -Oz -o merged.vcf.gz
-bcftools index merged.vcf.gz
+bcftools concat -a Variants/"$species"/${species}_chr_*.vcf.gz -Oz -o Variants/"$species"/${species}_merged.vcf.gz
+bcftools index Variants/"$species"/${species}_merged.vcf.gz
+done
+```
 
+```bash
+
+while read species; do
+bam=$species.sorted.bam
+samtools depth bams/$bam > depths/$bam.depth.txt
+awk '{sum+=$3} END { print "Average = ",sum/NR}' depths/$bam.depth.txt > depths/$bam.cov
+done < Species_list.txt
+
+
+
+cat Species_list.txt | parallel 'samtools depth bams/{}.sorted.bam | awk '\''{sum+=$3} END {print "Average = ",sum/NR}'\'' > depths/{}.sorted.bam.cov'
+
+cat Species_list.txt | parallel scripts/updated_filter_variants.py --vcf Variants/{}/{}_merged.vcf.gz --cov depths/{}.sorted.bam.cov --o Filtered_variants/{}
+
+for i in Filtered_variants/*/*vcf.gz; do tabix $i; done
+
+cat Species_list.txt | parallel scripts/updated_calculate_genome_wide_heterozygosity.py --vcf Filtered_variants/{}/{}_merged.filtered.vcf.gz --bam bams/{}.sorted.bam --cov depths/{}.sorted.bam.cov --o Heterozygosity/{}
+
+
+## Issues to fix:
+### Running the same command again appends rather than creating a new file (extract chromosomes for het)
+### Some individuals have 0 ROHs (especially Z), which breaks script updated_ROH_size_categories.py
+### Should also calculate 4d pi 
+
+species_list=($(cat Species_list.txt))
+z_list=($(cat Z_list.txt))
+
+
+num_species=${#species_list[@]}
+for ((i=0; i<$num_species; i++)); do
+species="${species_list[$i]}"
+Z="${z_list[$i]}"
+
+
+bash scripts/extract_chromosomes_for_het.sh $(find Genomes/$species*/ -name "*autosomes.txt") "Heterozygosity/$species/${species}_merged.filtered.heterozygosity.txt" "Heterozygosity/$species/${species}_autosomes.heterozygosity.txt"
+bash scripts/extract_chromosomes_for_het.sh "$Z" "Heterozygosity/$species/${species}_merged.filtered.heterozygosity.txt" "Heterozygosity/$species/${species}_Z2.heterozygosity.txt"
+
+python3 scripts/runs_of_homozygosity.py --het Heterozygosity/$species/${species}_autosomes.heterozygosity.txt --o ROH/$species
+python3 scripts/runs_of_homozygosity.py --het Heterozygosity/$species/${species}_Z2.heterozygosity.txt --o ROH/$species
+
+python3 scripts/updated_ROH_size_categories.py --het ROH/$species/${species}_autosomes.heterozygosity.insideROH.txt --o ROH/$species
+python3 scripts/updated_ROH_size_categories.py --het ROH/$species/${species}_Z2.heterozygosity.insideROH.txt --o ROH/$species
+
+cat Heterozygosity/$species/${species}_autosomes.heterozygosity.txt | awk '$4 >= 6000 {het += $6; cov += $4} END {print het/cov}'
+cat Heterozygosity/$species/${species}_Z2.heterozygosity.txt | awk '$4 >= 6000 {het += $6; cov += $4} END {print het/cov}'
+
+done
+
+```
+## Old code for a variant caller that is no longer being used 
+
+```bash
 bcftools view -v snps merged.vcf.gz -Ou | \
 bcftools filter -i "QUAL>=15 && FORMAT/GQ>=20" \
 -Oz -o filtered.vcf.gz
