@@ -113,6 +113,11 @@ for i in Filtered_variants/*/*vcf.gz; do tabix $i; done
 
 cat Species_list.txt | parallel scripts/updated_calculate_genome_wide_heterozygosity.py --vcf Filtered_variants/{}/{}_merged.filtered.vcf.gz --bam bams/{}.sorted.bam --cov depths/{}.sorted.bam.cov --o Heterozygosity/{}
 
+## Needs to be saved to an output file and also fixed to account for uncallable sites
+
+#cat Species_list.txt | parallel scripts/calc_fold_pi.py -r $(find Genomes/{}* -name "*.fa") -g $(find Annotations/{}* -name "*.gff") -v Variants/{}/{}_merged.vcf.gz -o PI/{} -f 0,4
+
+
 
 ## Issues to fix:
 ### Running the same command again appends rather than creating a new file (extract chromosomes for het)
