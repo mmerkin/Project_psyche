@@ -52,13 +52,23 @@ parallel -j 4 run_sample {} 12 ::: HiFi_reads/*.fastq.gz
 ## Genomescope
 
 ```bash
-samtools view -bS -L Aricia_artaxerxes_autosomes.bed Aricia_artaxerxes.sorted.bam > Aricia_artaxerxes_autosomes.bam
-samtools bam2fq Aricia_artaxerxes_autosomes.bam > Aricia_artaxerxes_autosomes.fastq; bgzip Aricia_artaxerxes_autosomes.fastq
+while read species; do
+echo $species
+python3 scripts/calc_fold_pi.py -r $(find Genomes/$species* -name "*.fa") -g $(find Annotations/$species* -name "*.gff") -v Variants/$species/${species}_merged.vcf.gz -o PI/$species -f 0,4
+done < Species_list.txt
 
 
-FastK -v -t1 -k31 ../Aricia_artaxerxes_HiFi.fastq.gz -NTable
-Histex -G Table | ~/apps/GENESCOPE.FK/GeneScopeFK.R -o Output -k 31
 
+
+samtools view -b bams/Lampides_boeticus.sorted.bam $(cat Genomes/Lampides_boeticus.GCA_964656195.1/GCA_964656195.1_autosomes.txt) > kmers/Lampides_boeticu_autosomes.bam
+
+samtools bam2fq kmers/Lampides_boeticu_autosomes.bam > kmers/Lampides_boeticus_autosomes.fastq
+
+
+FastK -v -t1 -k31 kmers/Lampides_boeticus_autosomes.fastq -NTable
+
+mv Table.hist kmers/${species}_Table.hist
+mv Table.ktab kmers/${species}_Table.ktab
 ```
 
 ## Python
