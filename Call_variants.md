@@ -60,15 +60,22 @@ done < Species_list.txt
 
 
 
-samtools view -b bams/Lampides_boeticus.sorted.bam $(cat Genomes/Lampides_boeticus.GCA_964656195.1/GCA_964656195.1_autosomes.txt) > kmers/Lampides_boeticu_autosomes.bam
+while read species; do
+echo $species
 
-samtools bam2fq kmers/Lampides_boeticu_autosomes.bam > kmers/Lampides_boeticus_autosomes.fastq
+autosomes=$(find Genomes/$species* -name "*_autosomes.txt")
+samtools view -b bams/${species}.sorted.bam $(cat $autosomes) > tmp_bams/${species}_autosomes.bam
+
+samtools bam2fq tmp_bams/${species}_autosomes.bam > tmp_bams/${species}_autosomes.fastq
 
 
-FastK -v -t1 -k31 kmers/Lampides_boeticus_autosomes.fastq -NTable
+FastK -v -t1 -k31 tmp_bams/${species}_autosomes.fastq -NTable
 
 mv Table.hist kmers/${species}_Table.hist
 mv Table.ktab kmers/${species}_Table.ktab
+rm tmp_bams/*
+
+done < Species_list.txt
 ```
 
 ## Python
