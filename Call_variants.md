@@ -22,7 +22,7 @@ run_sample() {
 export -f run_sample
 
 
-parallel -j 4 run_sample {} 12 ::: HiFi_reads/*.fastq.gz
+parallel -j 4 run_sample {} bams 12 ::: HiFi_reads/*.fastq.gz
 
 ```
 
