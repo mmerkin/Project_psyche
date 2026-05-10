@@ -124,7 +124,7 @@ done < Species_list.txt
 
 cat Species_list.txt | parallel 'samtools depth bams/{}.sorted.bam | awk '\''{sum+=$3} END {print "Average = ",sum/NR}'\'' > depths/{}.sorted.bam.cov'
 
-cat Species_list.txt | parallel scripts/updated_filter_variants.py --vcf Variants/{}/{}_merged.vcf.gz --cov depths/{}.sorted.bam.cov --o Filtered_variants/{}
+cat Species_list.txt | parallel scripts/updated_filter_variants2.py --vcf Variants/{}/{}_merged.vcf.gz --cov depths/{}.sorted.bam.cov --o Filtered_variants/{}
 
 for i in Filtered_variants/*/*vcf.gz; do tabix $i; done
 
@@ -152,16 +152,15 @@ Z="${z_list[$i]}"
 
 
 bash scripts/extract_chromosomes_for_het.sh $(find Genomes/$species*/ -name "*autosomes.txt") "Heterozygosity/$species/${species}_merged.filtered.heterozygosity.txt" "Heterozygosity/$species/${species}_autosomes.heterozygosity.txt"
-bash scripts/extract_chromosomes_for_het.sh "$Z" "Heterozygosity/$species/${species}_merged.filtered.heterozygosity.txt" "Heterozygosity/$species/${species}_Z2.heterozygosity.txt"
+bash scripts/extract_chromosomes_for_het.sh "$Z" "Heterozygosity/$species/${species}_merged.filtered.heterozygosity.txt" "Heterozygosity/$species/${species}_Z.heterozygosity.txt"
 
 python3 scripts/runs_of_homozygosity.py --het Heterozygosity/$species/${species}_autosomes.heterozygosity.txt --o ROH/$species
-python3 scripts/runs_of_homozygosity.py --het Heterozygosity/$species/${species}_Z2.heterozygosity.txt --o ROH/$species
+python3 scripts/runs_of_homozygosity.py --het Heterozygosity/$species/${species}_Z.heterozygosity.txt --o ROH/$species
 
 python3 scripts/updated_ROH_size_categories.py --het ROH/$species/${species}_autosomes.heterozygosity.insideROH.txt --o ROH/$species
-python3 scripts/updated_ROH_size_categories.py --het ROH/$species/${species}_Z2.heterozygosity.insideROH.txt --o ROH/$species
 
 cat Heterozygosity/$species/${species}_autosomes.heterozygosity.txt | awk '$4 >= 6000 {het += $6; cov += $4} END {print het/cov}'
-cat Heterozygosity/$species/${species}_Z2.heterozygosity.txt | awk '$4 >= 6000 {het += $6; cov += $4} END {print het/cov}'
+cat Heterozygosity/$species/${species}_Z.heterozygosity.txt | awk '$4 >= 6000 {het += $6; cov += $4} END {print het/cov}'
 
 done
 
