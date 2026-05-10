@@ -151,6 +151,8 @@ species="${species_list[$i]}"
 Z="${z_list[$i]}"
 
 
+echo "$species"
+
 bash scripts/extract_chromosomes_for_het.sh $(find Genomes/$species*/ -name "*autosomes.txt") "Heterozygosity/$species/${species}_merged.filtered.heterozygosity.txt" "Heterozygosity/$species/${species}_autosomes.heterozygosity.txt"
 bash scripts/extract_chromosomes_for_het.sh "$Z" "Heterozygosity/$species/${species}_merged.filtered.heterozygosity.txt" "Heterozygosity/$species/${species}_Z.heterozygosity.txt"
 
